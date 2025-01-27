@@ -1,0 +1,122 @@
+<html>
+
+<head>
+    <title>Cadastre</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
+    <style>
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+        }
+
+        body {
+            display: flex;
+        }
+
+        #map {
+            flex: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <input type="text" name="surface" id="surface" />
+
+    <script>
+        var polyline = null;
+        var polygon
+        var startDraw = null;
+        var cities = [];
+
+        var map = L.map('map').setView([50.75, 2.25], 13);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: ' <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+
+        function handleAPIResponse(response) {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        }
+
+        function handleAPICadastreInfo(data) {
+            console.log(data);
+
+            for (var indexData = 0; indexData < data.features.length; indexData++) {
+                var duplicate = false;
+                var parcellePolygon = data.features[indexData].geometry.coordinates;
+
+
+                turf.intersect(turf.featureCollection([turf.polygon(parcellePolygon), turf.polygon(polygon)]))
+            }
+        }
+
+        function handleAPICityInfoData(data) {
+            for (var indexData = 0; indexData < data.length; indexData++) {
+                var duplicate = false;
+                var cityData = data[indexData];
+
+                for (var indexCity = 0; indexCity < cities.length; indexCity++) {
+                    if (cities[indexCity].code == cityData.code)
+                        duplicate = true;
+                }
+
+                if (duplicate == false) {
+                    cities.push(cityData);
+                    console.log("Nouvelle ville trouvée ");
+                    console.log(cityData)
+
+                    var requestURL = "https://apicarto.ign.fr/api/cadastre/division?code_insee=" + cityData.code;
+                    console.log(requestURL);
+                    fetch(requestURL)
+                        .then(handleAPIResponse).then(handleAPICadastreInfo).catch(console.error);
+                }
+            }
+
+        }
+
+        function closeZoneOfInterest(e) {
+            // console.log(e);
+            polyline.addLatLng(e.latlng);
+
+            var polygon = L.polygon(polyline.getLatLngs(), { color: 'blue' }).addTo(map);
+            // console.log(polygon);
+
+            // Get the INSEE code for the citie(s ?)
+            for (var indexLatLng = 0; indexLatLng < polyline.getLatLngs().length; indexLatLng++) {
+                var requestURL = "https://geo.api.gouv.fr/communes?lat=" + polyline.getLatLngs()[indexLatLng].lat + "&lon=" + polyline.getLatLngs()[indexLatLng].lng + "&fields=code,codeEpci,codeDepartement,codeRegion&format=json&geometry=centre"
+                // console.log(requestURL);
+                fetch(requestURL).then(handleAPIResponse).then(handleAPICityInfoData).catch(console.error);
+            }
+
+        }
+
+        function drawZoneOfInterest(e) {
+            // console.log(e);
+            var test = document.getElementById("surface").textContent;
+
+            if (polyline == null) {
+                polyline = L.polyline([e.latlng], { color: 'red' }).addTo(map);
+                startDraw = L.marker(e.latlng, { opacity: 0.0 }).addTo(map);
+                startDraw.on('click', closeZoneOfInterest)
+            }
+            else
+                polyline.addLatLng(e.latlng);
+
+            // console.log(polyline);
+        }
+
+        map.on('click', drawZoneOfInterest);
+    </script>
+</body>
+
+</html>
