@@ -17,23 +17,41 @@
 
         body {
             display: flex;
+            flex-direction: column;
         }
 
         #map {
-            flex: 1;
+            flex: 0.9;
+        }
+
+        header {
+            flex: 0.1;
+            display: flex;
+            justify-content: center;
+            text-align: center;
+        }
+
+        #labelSurface {
+            flex: 0.5;
         }
     </style>
 </head>
 
 <body>
+    <header>
+        <div id="labelSurface"><label for="surface">Surface recherchée (m²)<br /><input type="number" name="surface"
+                    id="surface" size="10" /></label>
+        </div>
+    </header>
+
     <div id="map"></div>
-    <input type="text" name="surface" id="surface" />
 
     <script>
         var polyline = null;
-        var polygon
+        var polygon = null;
         var startDraw = null;
         var cities = [];
+        var parcelles = [];
 
         var map = L.map('map').setView([50.75, 2.25], 13);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -48,15 +66,43 @@
             return response.json();
         }
 
-        function handleAPICadastreInfo(data) {
+        function handleAPIParcelleInfo(data) {
+            var targetArea = Number(document.getElementById('surface').value);
+
+            for (var indexData = 0; indexData < data.features.length; indexData++) {
+                var parcellePolygon = data.features[indexData].geometry.coordinates;
+                var turfPolygonParcelle = turf.polygon(parcellePolygon[0]);
+                var turfPolygonZoneOfInterest = turf.polygon(polygon.toGeoJSON().geometry.coordinates);
+                var intersection = turf.intersect(turf.featureCollection([turfPolygonParcelle, turfPolygonZoneOfInterest]));
+                if (intersection != null) {
+                    var colorPolygon = 'yellow';
+                    var parcelleArea = turf.area(turfPolygonParcelle);
+                    console.log(parcelleArea);
+                    if (parcelleArea >= targetArea * 0.9 && parcelleArea <= targetArea * 1.1) {
+                        colorPolygon = 'green';
+                    }
+
+                    var polygonParcelle = L.polygon(L.GeoJSON.coordsToLatLngs(turfPolygonParcelle.geometry.coordinates[0]), { color: colorPolygon });
+                    parcelles.push(polygonParcelle);
+                    polygonParcelle.addTo(map);
+                }
+            }
+        }
+
+        function handleAPIDivisionInfo(data) {
             console.log(data);
 
             for (var indexData = 0; indexData < data.features.length; indexData++) {
-                var duplicate = false;
-                var parcellePolygon = data.features[indexData].geometry.coordinates;
-
-
-                turf.intersect(turf.featureCollection([turf.polygon(parcellePolygon), turf.polygon(polygon)]))
+                var divisionPolygon = data.features[indexData].geometry.coordinates;
+                var turfPolygonDivision = turf.polygon(divisionPolygon[0]);
+                var turfPolygonZoneOfInterest = turf.polygon(polygon.toGeoJSON().geometry.coordinates);
+                var intersection = turf.intersect(turf.featureCollection([turfPolygonDivision, turfPolygonZoneOfInterest]));
+                if (intersection != null) {
+                    var requestURL = "https://apicarto.ign.fr/api/cadastre/parcelle?code_insee=" + data.features[indexData].properties.code_insee + "&section=" + data.features[indexData].properties.section;
+                    console.log(requestURL);
+                    fetch(requestURL)
+                        .then(handleAPIResponse).then(handleAPIParcelleInfo).catch(console.error);
+                }
             }
         }
 
@@ -78,7 +124,7 @@
                     var requestURL = "https://apicarto.ign.fr/api/cadastre/division?code_insee=" + cityData.code;
                     console.log(requestURL);
                     fetch(requestURL)
-                        .then(handleAPIResponse).then(handleAPICadastreInfo).catch(console.error);
+                        .then(handleAPIResponse).then(handleAPIDivisionInfo).catch(console.error);
                 }
             }
 
@@ -88,7 +134,7 @@
             // console.log(e);
             polyline.addLatLng(e.latlng);
 
-            var polygon = L.polygon(polyline.getLatLngs(), { color: 'blue' }).addTo(map);
+            polygon = L.polygon(polyline.getLatLngs(), { color: 'blue' }).addTo(map);
             // console.log(polygon);
 
             // Get the INSEE code for the citie(s ?)
